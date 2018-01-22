@@ -102,7 +102,6 @@ func getURL(ctx context.Context, c *chromedp.CDP, song Song, downloadURL *string
 		chromedp.Click("#advancedtagsbtn a", chromedp.NodeVisible),
 		chromedp.WaitVisible("#inputCover", chromedp.ByID),
 		chromedp.Click("#inputCover", chromedp.NodeVisible),
-		chromedp.Sleep(3 * time.Second),
 		chromedp.Click(".btn-success", chromedp.NodeVisible),
 		chromedp.Sleep(1 * time.Second),
 	}); err != nil {

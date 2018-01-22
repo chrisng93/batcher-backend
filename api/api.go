@@ -3,7 +3,10 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/chrisng93/batcher-backend/download"
@@ -29,27 +32,47 @@ func downloadSongsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 	wg.Add(len(body["songs"]))
-	downloadURLs := make(chan string)
+	finishedDownloads := make(chan bool)
 	for _, song := range body["songs"] {
 		go func(song download.Song) {
 			defer wg.Done()
-			downloadURLs <- download.GetDownloadURL(song)
+			log.Printf("Getting download URL for song. Artist: %v, title: %v", song.Artist, song.Title)
+			downloadURL := download.GetDownloadURL(song)
+			log.Printf("Downloading song. Artist: %v, title: %v", song.Artist, song.Title)
+			err := downloadFromURL(downloadURL, song)
+			if err != nil {
+				log.Print(err)
+			}
+			log.Printf("Downloaded song. Artist: %v, title: %v", song.Artist, song.Title)
+			finishedDownloads <- true
 		}(song)
 	}
-	fmt.Println("looped through songs")
 	go func() {
 		wg.Wait()
-		fmt.Println("closed channel")
-		close(downloadURLs)
+		fmt.Println("closed download channel")
+		close(finishedDownloads)
 	}()
-
-	var urls []string
-	fmt.Println("ranging through download URLS")
-	for url := range downloadURLs {
-		fmt.Println(url)
-		urls = append(urls, url)
-	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte{})
+}
+
+func downloadFromURL(url string, song download.Song) error {
+	fileName := fmt.Sprintf("./downloads/%v - %v.mp3", song.Artist, song.Title)
+	output, err := os.Create(fileName)
+	if err != nil {
+		return fmt.Errorf("error creating filename %v: %v", fileName, err)
+	}
+	response, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error getting response for url %v: %v", url, err)
+	}
+	defer response.Body.Close()
+
+	_, err = io.Copy(output, response.Body)
+	if err != nil {
+		return fmt.Errorf("error downloading body for url %v: %v", url, err)
+	}
+
+	return nil
 }

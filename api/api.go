@@ -29,8 +29,8 @@ func downloadSongsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 	wg.Add(len(body["songs"]))
-	successfulChan := make(chan songModel)
-	unsuccessfulChan := make(chan songModel)
+	successfulChan := make(chan songModel, len(body["songs"]))
+	unsuccessfulChan := make(chan songModel, len(body["songs"]))
 
 	var songs []songModel
 	for _, song := range body["songs"] {

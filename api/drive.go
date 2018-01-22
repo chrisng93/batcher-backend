@@ -7,11 +7,17 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/runner"
 )
 
 const converterURL = "http://convert2mp3.net/en/"
 const maxTries = 5
+const jsCheckForPopup = `
+	if (window.location.href.indexOf('convert2mp3') === -1) {
+		document.getElementsByTagName('button')[0].click()
+		return true;
+	}
+	return false;
+`
 
 // songModel defines the structure of a single song input.
 type songModel struct {
@@ -36,8 +42,8 @@ func getDownloadURL(song songModel, tries int) string {
 	// Create chrome instance.
 	var options chromedp.Option
 	options = chromedp.WithRunnerOptions(
-		runner.Flag("headless", true),
-		runner.Flag("no-sandbox", true),
+	// runner.Flag("headless", true),
+	// runner.Flag("no-sandbox", true),
 	)
 	c, err := chromedp.New(ctx, options)
 	if err != nil {
@@ -74,25 +80,35 @@ func getDownloadURL(song songModel, tries int) string {
 // the given song.
 func getURL(ctx context.Context, c *chromedp.CDP, song songModel, downloadURL *string) error {
 	var cancel func()
-	ctx, cancel = context.WithTimeout(ctx, 1*time.Minute)
+	ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	if err := c.Run(ctx, chromedp.Navigate(converterURL)); err != nil {
 		return fmt.Errorf("error navigating to converter URL: %v", err)
 	}
 
+	originalTabs := c.ListTargets()
+
 	// Set song URL.
 	if err := c.Run(ctx, chromedp.Tasks{
+		chromedp.Sleep(1 * time.Second),
 		chromedp.WaitVisible(".input_convert", chromedp.ByQuery),
 		chromedp.SetValue(".input_convert", song.URL, chromedp.ByQuery),
 		chromedp.Click("#convertForm .mainbtn", chromedp.NodeVisible),
-		chromedp.Sleep(3 * time.Second),
 	}); err != nil {
 		return fmt.Errorf("error setting song URL: %v", err)
 	}
 
+	updatedTabs := c.ListTargets()
+	// Unable to do this right now. Closing tabs is not yet implemented.
+	// https://github.com/chromedp/chromedp/issues/144
+	if len(originalTabs) != len(updatedTabs) {
+		// Delete added tab.
+	}
+
 	// Set song artist.
 	if err := c.Run(ctx, chromedp.Tasks{
+		chromedp.Sleep(15 * time.Second),
 		chromedp.WaitVisible("#input_artist", chromedp.ByID),
 		chromedp.Click("#input_artist a", chromedp.NodeVisible),
 		chromedp.WaitVisible("#input_artist input", chromedp.ByQuery),
@@ -103,6 +119,7 @@ func getURL(ctx context.Context, c *chromedp.CDP, song songModel, downloadURL *s
 
 	// Set song title.
 	if err := c.Run(ctx, chromedp.Tasks{
+		chromedp.Sleep(1 * time.Second),
 		chromedp.WaitVisible("#input_title", chromedp.ByID),
 		chromedp.Click("#input_title a", chromedp.NodeVisible),
 		chromedp.WaitVisible("#input_title input", chromedp.ByQuery),
@@ -113,19 +130,25 @@ func getURL(ctx context.Context, c *chromedp.CDP, song songModel, downloadURL *s
 
 	// Set album cover.
 	if err := c.Run(ctx, chromedp.Tasks{
+		chromedp.Sleep(1 * time.Second),
 		chromedp.WaitVisible("#advancedtagsbtn", chromedp.ByID),
 		chromedp.Click("#advancedtagsbtn a", chromedp.NodeVisible),
 		chromedp.WaitVisible("#inputCover", chromedp.ByID),
 		chromedp.Click("#inputCover", chromedp.NodeVisible),
 		chromedp.Click(".btn-success", chromedp.NodeVisible),
-		chromedp.Sleep(1 * time.Second),
 	}); err != nil {
 		return fmt.Errorf("error setting album cover: %v", err)
+	}
+
+	updatedTabs = c.ListTargets()
+	if len(originalTabs) != len(updatedTabs) {
+		// Delete added tab.
 	}
 
 	// Get song download URL.
 	var downloadOK bool
 	if err := c.Run(ctx, chromedp.Tasks{
+		chromedp.Sleep(2 * time.Second),
 		chromedp.WaitVisible(".btn-success", chromedp.ByQuery),
 		chromedp.AttributeValue(".btn-success", "href", downloadURL, &downloadOK, chromedp.ByQuery),
 	}); err != nil {

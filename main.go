@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/chrisng93/batcher-backend/api"
-	"github.com/gorilla/handlers"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -24,5 +23,22 @@ func main() {
 	}
 
 	router := api.Init()
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", options.Port), handlers.CORS()(router)))
+	err = http.ListenAndServe(fmt.Sprintf(":%s", options.Port), corsMiddleware(router))
+	if err != nil {
+		log.Fatalf("Error starting server: %v", err)
+	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers:", "Origin, Content-Type, X-Auth-Token, Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

@@ -1,4 +1,4 @@
-package download
+package api
 
 import (
 	"context"
@@ -11,16 +11,24 @@ import (
 )
 
 const converterURL = "http://convert2mp3.net/en/"
+const maxTries = 5
 
-// Song defines the structure of a single song input.
-type Song struct {
+// songModel defines the structure of a single song input.
+type songModel struct {
 	URL    string `json:"permalink_url"`
 	Artist string `json:"artist"`
 	Title  string `json:"title"`
 }
 
-// GetDownloadURL gets and returns the download URL for a song.
-func GetDownloadURL(song Song) string {
+type downloadURLResults struct {
+	urls        []string
+	successful  []songModel
+	unsucessful []songModel
+}
+
+// getDownloadURL gets and returns the download URL for a song. On failure, it tries maxTries
+// times before marking the download as unsucessful.
+func getDownloadURL(song songModel, tries int) string {
 	// Set context.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -31,7 +39,7 @@ func GetDownloadURL(song Song) string {
 		runner.Flag("headless", true),
 		runner.Flag("no-sandbox", true),
 	)
-	c, err := chromedp.New(ctx, options, chromedp.WithErrorf(log.Printf))
+	c, err := chromedp.New(ctx, options)
 	if err != nil {
 		log.Fatalf("Error creating chrome instance: %v", err)
 	}
@@ -42,22 +50,29 @@ func GetDownloadURL(song Song) string {
 	if err != nil {
 		log.Println(err)
 	}
-	fmt.Println("got download url", downloadURL)
 
+	// Shut down chrome page handlers.
 	err = c.Shutdown(ctx)
 	if err != nil {
 		log.Printf("Error shutting down chrome instance: %v", err)
 	}
 
+	// Wait for Chrome runner to terminate.
 	err = c.Wait()
 	if err != nil {
 		log.Printf("Error waiting for chrome instance to finish: %v", err)
 	}
 
+	if downloadURL == "" && tries < maxTries {
+		log.Printf("Attempt #%v for downloading %v by %v", tries+1, song.Title, song.Artist)
+		return getDownloadURL(song, tries+1)
+	}
 	return downloadURL
 }
 
-func getURL(ctx context.Context, c *chromedp.CDP, song Song, downloadURL *string) error {
+// getURL walks through the chrome browser to input metadata about and get the download URL for
+// the given song.
+func getURL(ctx context.Context, c *chromedp.CDP, song songModel, downloadURL *string) error {
 	var cancel func()
 	ctx, cancel = context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
